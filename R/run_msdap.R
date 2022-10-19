@@ -1,14 +1,212 @@
-source("msdap_lib.R")
+scriptdir <- dirname(rstudioapi::getSourceEditorContext()$path)
+
+source(file.path(scriptdir,"msdap_lib.R"))
 
 fastas <- c("C:/GREENBLATT/resource/human_uniprot_reference_proteome_9606.fasta/UP000005640_9606_061820.fasta",
             "C:/GREENBLATT/resource/sars2_uniprot_reference_proteome_2697049.fasta/REFSEQ_Wuhan_Hu_1_nr.fasta")
 
-### 220516_INF2_INF5_DIA DIA-NN #####
+#
+# for the contrasts, the first of the pair is the background
+## 221017_calu3_sars2_inf8_vcp_dda #####
+wd <- "C:/data/raw/EDYTA/PROTEIN/221017_calu3_sars2_inf8_vcp_dda/combined/txt"
+
+mydataset <- prepare_msdap(wd, searchType = "MAXQUANT")
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="nd")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="nd")
+plot_volcano_for_msdap(wd, padj_cutoff=0.05, col_factor=NULL, gsea=TRUE)
+#
+## 220913_calu3_sars2_vcp_DDA #####
+wd <- "C:/data/raw/EDYTA/PROTEIN/220913_calu3_sars2_vcp_DDA/combined/txt"
+
+mydataset <- prepare_msdap(wd, searchType = "MAXQUANT")
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="nd")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="nd")
+plot_volcano_for_msdap(wd, padj_cutoff=0.05, col_factor=NULL, gsea=FALSE)
+#
+## 220913_calu3_sars2_vcp_DIA #####
+wd <- "C:/data/raw/EDYTA/PROTEIN/220913_calu3_sars2_vcp_DIA/DIANN"
+
+mydataset <- prepare_msdap(wd)
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="nd")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="nd")
+plot_volcano_for_msdap(wd, padj_cutoff=0.05, col_factor=NULL, gsea=FALSE)
+
+
+## 220902_NASAL_basal_apical_day1&2_180min basal #####
+wd <- "C:/data/raw/EDYTA/PROTEIN/220902_NASAL_basal_apical_day1&2_180min/basal_180_D1&D2/DIANN"
+
+mydataset <- prepare_msdap(wd)
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="dmso")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="dmso")
+plot_volcano_for_msdap(wd, padj_cutoff=0.05, col_factor=NULL, gsea=FALSE)
+
+## 220902_NASAL_basal_apical_day1&2_180min apical #####
+wd <- "C:/data/raw/EDYTA/PROTEIN/220902_NASAL_basal_apical_day1&2_180min/apical_180_D1&D2/DIANN"
+
+mydataset <- prepare_msdap(wd)
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="dmso")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="dmso")
+plot_volcano_for_msdap(wd, padj_cutoff=0.05, col_factor=NULL, gsea=FALSE)
+
+## 220504_nasal_basal_apical_Day1_180min_apical DIANN #####
+wd <- "C:/data/raw/EDYTA/PROTEIN/220504_nasal_basal_apical_Day1_180min/apical/DIANN"
+
+mydataset <- prepare_msdap(wd)
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="dmso")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="dmso")
+plot_volcano_for_msdap(wd, padj_cutoff=0.05, col_factor=NULL, gsea=FALSE)
+
+## 220504_nasal_basal_apical_Day1_180min_base DIANN #####
+wd <- "C:/data/raw/EDYTA/PROTEIN/220504_nasal_basal_apical_Day1_180min/basal/DIANN"
+
+mydataset <- prepare_msdap(wd)
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="dmso")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="dmso")
+plot_volcano_for_msdap(wd, padj_cutoff=0.05, col_factor=NULL, gsea=FALSE)
+
+## 220804_nasal_basal_apical_Day1_90min_basal_Day1 DIANN #####
+wd <- "C:/data/raw/EDYTA/PROTEIN/220804_nasal_basal_apical_Day1_90min/basal_Day1/DIANN"
+
+mydataset <- prepare_msdap(wd)
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="dmso")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="dmso")
+plot_volcano_for_msdap(wd, padj_cutoff=0.05, col_factor=NULL, gsea=FALSE)
+
+## 220804_nasal_basal_apical_Day1_90min_apical_Day1 DIANN #####
+wd <- "C:/data/raw/EDYTA/PROTEIN/220804_nasal_basal_apical_Day1_90min/apical_Day1/DIANN"
+
+mydataset <- prepare_msdap(wd)
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="dmso")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="dmso")
+plot_volcano_for_msdap(wd, padj_cutoff=0.05, col_factor=NULL, gsea=FALSE)
+
+## 220705_nasal_basal_EXP3 DIANN #####
+wd <- "C:/data/raw/EDYTA/PROTEIN/220705_nasal_basal_EXP3/apical_exp3/DIANN"
+
+mydataset <- prepare_msdap(wd)
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="dmso")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="dmso")
+
+### apical DIANN_D2 ####
+wd <- "C:/data/raw/EDYTA/PROTEIN/220705_nasal_basal_EXP3/apical_exp3/DIANN_D2"
+
+
+mydataset <- prepare_msdap(wd)
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="dmso")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="dmso")
+### apical DIANN_D3 ####
+wd <- "C:/data/raw/EDYTA/PROTEIN/220705_nasal_basal_EXP3/apical_exp3/DIANN_D3"
+
+# the first of the pair is the background
+
+mydataset <- prepare_msdap(wd)
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="dmso")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="dmso")
+
+### basal DIANN_D2 ####
+wd <- "C:/data/raw/EDYTA/PROTEIN/220705_nasal_basal_EXP3/basal_exp3/DIANN_D2"
+
+mydataset <- prepare_msdap(wd)
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="dmso")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="dmso")
+
+### basal DIANN_D3 ####
+wd <- "C:/data/raw/EDYTA/PROTEIN/220705_nasal_basal_EXP3/basal_exp3/DIANN_D3"
+
+mydataset <- prepare_msdap(wd)
+contrasts <- make_contrasts(wd, treatRef="mock", groupRef="dmso")
+
+res <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
+res$dir
+
+wd <- file.path(wd,res$dir)
+geneNames <- gene_names_from_fasta(fastas[2])
+plot_for_msdap_drugTreatment(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="dmso")
+
+## 220516_INF2_INF5_DIA DIA-NN #####
 wd <- "C:/data/raw/EDYTA/PROTEIN/220516_INF2_INF5_DIA"
 
 preprocess_diann_report(wd)
 mydataset <- prepare_msdap(wd)
-# for the contrasts, the first of the pair is the background
+
 contrasts <- list(c("sars2_nd", "sars2_b5"), c("mock_b5", "sars2_b5"), c("mock_nd", "sars2_nd"), c("mock_nd", "mock_b5"))
 
 contrasts <- make_contrasts(wd, treatRef="mock", groupRef="nd")

@@ -13,17 +13,17 @@ prepare_msdap <- function(wd, overwrite=FALSE, searchType="DIA-NN"){
    library(iq)
    library(msdap)
    library(openxlsx)
-   
+
    searchType <- toupper(searchType)
    if(searchType == "DIA-NN"){
-      mydataset <- import_dataset_diann(file.path(wd, "report.tsv"))   
+      mydataset <- import_dataset_diann(file.path(wd, "report.tsv"))
    }else if(searchType == "MSFRAGGER"){
-      mydataset <- import_dataset_diann(file.path(wd, "diann-output.tsv")) 
+      mydataset <- import_dataset_diann(file.path(wd, "diann-output.tsv"))
    }else if(searchType == "MAXQUANT"){
-      mydataset <- import_dataset_maxquant_evidencetxt(wd) 
+      mydataset <- import_dataset_maxquant_evidencetxt(wd)
    }
-   
-   
+
+
    if(!file.exists(file.path(wd, "samples.xlsx")) | overwrite){
       write_template_for_sample_metadata(mydataset, file.path(wd, "samples.xlsx"), TRUE)
       ## make groups out of shortNames
@@ -31,33 +31,33 @@ prepare_msdap <- function(wd, overwrite=FALSE, searchType="DIA-NN"){
       sheets <- openxlsx::getSheetNames(xlsxfile)
       annot <- lapply(sheets, openxlsx::read.xlsx, xlsxFile=xlsxfile)[[1]]
       instruc <- lapply(sheets, openxlsx::read.xlsx, xlsxFile=xlsxfile)[[2]]
-      
+
       grouping <- sapply(annot$shortname, function(x){
          g <- unlist(strsplit(x, split="_"))[1:2]
          g <- paste(g, collapse = "_")})
       names(grouping) <- NULL
       annot$group <- grouping
-      
+
       print(annot)
-      
+
       dataset_names <- list("samples" = annot, "instructions" = instruc)
       write.xlsx(dataset_names, file = file.path(wd, "samples.xlsx"))
-      
-      print(paste("!!! Edit", file.path(wd, "samples.xlsx"), "now"))  
+
+      print(paste("!!! Edit", file.path(wd, "samples.xlsx"), "now"))
    }else{
-      print(paste(file.path(wd, "samples.xlsx"), "exists already!")) 
+      print(paste(file.path(wd, "samples.xlsx"), "exists already!"))
       print("If you want to make a new one, set 'overwrite' to TRUE and rerun this function!")
    }
-   
-   
+
+
    return(mydataset)
 }
 
 run_msdap <- function(wd, fastas, mydataset, contrasts=NULL, plot_data=FALSE){
-   
+
    mydataset <- import_fasta(mydataset, files=fastas)
    mydataset = remove_proteins_by_name(
-      mydataset, 
+      mydataset,
       #remove keratins and IGGs using regular expression against uniprot fasta headers
       #(particularly useful for IP experiments);
       regular_expression = "keratin|GN=(krt|try|igk|igg|igkv|ighv|ighg)",
@@ -65,42 +65,42 @@ run_msdap <- function(wd, fastas, mydataset, contrasts=NULL, plot_data=FALSE){
       gene_symbols = c("DMKN", "ALB") ## in maxquant contaminants list
    )
    mydataset <- import_sample_metadata(mydataset, file.path(wd, "samples.xlsx"))
-   
+
    if(is.null(contrasts)){
       mydataset <- setup_contrasts(mydataset, contrast_list = combn(unique(mydataset$samples$group), 2, simplify=F))
    }else{
-      mydataset <- setup_contrasts(mydataset, contrast_list = contrasts)   
+      mydataset <- setup_contrasts(mydataset, contrast_list = contrasts)
    }
-   
-   
+
+
    names(mydataset)
    print_dataset_summary(mydataset)
-   
-   mydataset <- analysis_quickstart(mydataset, 
-                       filter_min_detect=1, 
-                       filter_by_contrast=T, 
-                       dea_log2foldchange_threshold=NA, 
-                       dea_algorithm = c("msqrob"), 
+
+   mydataset <- analysis_quickstart(mydataset,
+                       filter_min_detect=1,
+                       filter_by_contrast=T,
+                       dea_log2foldchange_threshold=NA,
+                       dea_algorithm = c("msqrob"),
                        dea_qvalue_threshold = 0.05,
-                       pca_sample_labels="shortname", 
+                       pca_sample_labels="shortname",
                        norm_algorithm = c("vwmb", "modebetween_protein"),
                        output_dir=wd)
-   
+
    df <- file.info(list.files(wd, full.names = T))
    last_dir <- basename(rownames(df)[which.max(df$mtime)])
-   
+
    if(plot_data){
-      plot_peptide_data(mydataset, 
-                        select_all_proteins = TRUE, 
-                        select_diffdetect_candidates = TRUE, 
-                        select_dea_signif = TRUE, 
+      plot_peptide_data(mydataset,
+                        select_all_proteins = TRUE,
+                        select_diffdetect_candidates = TRUE,
+                        select_dea_signif = TRUE,
                         output_dir = file.path(wd, last_dir),
-                        show_unused_datapoints = TRUE, 
+                        show_unused_datapoints = TRUE,
                         norm_algorithm = c("vwmb", "modebetween_protein"))
    }
-   
+
    print_dataset_summary(mydataset)
-   
+
    return(list("dir"=last_dir, "data"=mydataset))
 }
 
@@ -108,27 +108,29 @@ plot_volcano_for_msdap <- function(wd, padj_cutoff=0.05, col_factor=NULL, gsea=F
    #wd <- "C:/data/raw/EDYTA/PROTEIN/211221_INF5_2/combined/txt/2022-03-07_10;18;19"
    library(openxlsx)
    library(EnhancedVolcano)
-   source("C:/GREENBLATT/Rscripts/RNAseq/Function_analysis_for_RNAseq_lib.R")
-   PATHWAY_file <- "C:/GREENBLATT/resource/GSEA_gmt/ReactomePathways.gmt"
-   
+   if(gsea){
+      source("C:/GREENBLATT/Rscripts/RNAseq/Function_analysis_for_RNAseq_lib.R")
+      PATHWAY_file <- "C:/GREENBLATT/resource/GSEA_gmt/ReactomePathways.gmt"
+   }
+
    setwd(wd)
    xlsxfile <- file.path(wd, "differential_abundance_analysis.xlsx")
-   
+
    # getting data from sheets
    sheets <- openxlsx::getSheetNames(xlsxfile)
    data_frame <- lapply(sheets, openxlsx::read.xlsx, xlsxFile=xlsxfile)
-   
+
    # assigning names to data frame
    names(data_frame) <- sheets
-   
+
    # printing the data
    # print (data_frame)
    my_df <- data_frame[["statistics"]]
-   
+
    head(my_df)
-   
-   
-   lfc_df <- my_df %>% 
+
+
+   lfc_df <- my_df %>%
       select(c("gene_symbols_or_id", starts_with("foldchange.log2_msqrob_contrast"), starts_with("qvalue_msqrob_contrast"))) %>%
       filter(!grepl(";", gene_symbols_or_id)) %>% # filter out protein groups with more than two proteins
       filter(!duplicated(gene_symbols_or_id)) # filter out protein groups with duplicated names
@@ -136,10 +138,10 @@ plot_volcano_for_msdap <- function(wd, padj_cutoff=0.05, col_factor=NULL, gsea=F
       select(starts_with("foldchange.log2_msqrob_contrast"))
    rownames(lfc_mat) <- lfc_df$gene_symbols_or_id
    colnames(lfc_mat) <- gsub("foldchange.log2_msqrob_contrast:.", "", colnames(lfc_mat))
-   
+
    ## choose gene with less than 25% missing values in all contrasts
    lfc_mat <- lfc_mat[apply(lfc_mat,1, function(x)sum(is.na(x))<0.25*ncol(lfc_mat)),]
-   
+
    if(!is.null(col_factor)){
       lfc_mat <- lfc_mat[,names(col_factor)]
       cols <- rep("#c6dcff", length(col_factor))
@@ -148,11 +150,12 @@ plot_volcano_for_msdap <- function(wd, padj_cutoff=0.05, col_factor=NULL, gsea=F
    }else{
       ha <- NULL
    }
-   
+
    pdf("Volcano_plots.pdf", width=10, height=8)
-   
-   h <- ComplexHeatmap::Heatmap(lfc_mat, 
-                                col=circlize::colorRamp2(c(-3, 0, 3), c("green", "black", "red"), space="RGB"),
+
+   h <- ComplexHeatmap::Heatmap(lfc_mat,
+                                #col=circlize::colorRamp2(c(-3, 0, 3), c("green", "black", "red"), space="RGB"),
+                                col = circlize::colorRamp2(quantile(lfc_mat, seq(0, 1, by = 0.25), na.rm=TRUE), viridis::viridis(5)),
                                 cluster_columns = F,
                                 top_annotation = ha,
                                 column_names_side = "bottom",
@@ -160,12 +163,12 @@ plot_volcano_for_msdap <- function(wd, padj_cutoff=0.05, col_factor=NULL, gsea=F
                                 column_split = col_factor,
                                 name="fold change")
    ComplexHeatmap::draw(h)
-   
+
    lapply(colnames(lfc_df)[grepl("foldchange.log2_msqrob_contrast", colnames(lfc_df))], function(x){
       print(x)
       cn <- gsub("foldchange.log2_msqrob_contrast:.", "", x)
       print(cn)
-      
+
       ## for volcano plot
       y <- paste0("qvalue_msqrob_contrast:.", cn)
       lfc_cutoff <- 1
@@ -184,17 +187,17 @@ plot_volcano_for_msdap <- function(wd, padj_cutoff=0.05, col_factor=NULL, gsea=F
                            #drawConnectors = TRUE,
                            widthConnectors = 0.75)
       print(p)
-      
+
       ## for GSEA
       if(gsea){
          lfc_list <- lfc_df[, x]
          names(lfc_list) <- lfc_df[,1]
          lfc_list <- lfc_list[!is.na(lfc_list)]
-         
+
          try(run_gseGO_simpleList(gene_list=lfc_list, dataName=cn, adjp_cutoff=padj_cutoff, ont="REACTOME_Pathway", GO_file=PATHWAY_file))
          try(run_gseGO_simpleList(gene_list=lfc_list, dataName=cn, adjp_cutoff=padj_cutoff))
       }
-      
+
    })
    dev.off()
 }
@@ -208,37 +211,51 @@ gene_names_from_fasta <- function(fasta){
       uniprot_name <- unlist(lapply(uniprot_name, function(x){gsub("GN=", "", x)}))
       uniprot_name <- unlist(lapply(uniprot_name, function(x){trimws(x)}))
    })
-   
+
    geneNames
-   
+
 }
 
-#impute=c("wrproteo", "halfmin"), default="halfmin"
+#' @title plot two factors boxplot
+#' @description This function extracts protein abundance values from output of 'run_msdap' for selected genes, plot
+#' boxplots for treat factor and drug factor separately, with statistical significance annotations. The statistical analysis
+#' is one-way anova followed by t-test on log transformed intensity values.
+#'
+#' @param wd working directory where sample information file 'sample.xlsx', and abundance data
+#' 'protein_abundance__input data as-is.tsv' are located
+#' @param geneNames a vector of characters denoting the selected gene names whose data will be analyzed
+#' @param impute a string in ("halfmin", "wrproteo") denoting the imputation methods for missing values, default 'halfmin'
+#' @param treatRef reference group for the treat factor
+#' @param drugRef reference group for the drug factor
+#'
+#' @return NULL
+#' @author Shuye Pu
+
 plot_for_msdap_drugTreatment <- function(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="nd"){
-   if(0){
-      impute="halfmin"
-      treatRef="mock"
-      drugRef="nd"
-   }
-   
+
    library(ComplexHeatmap)
    library(openxlsx)
    library(ggpubr)
    library(wrProteo)
-   
+
    setwd(wd)
    xlsxfile <- file.path(wd, "samples.xlsx")
    sheets <- openxlsx::getSheetNames(xlsxfile)
    annot <- lapply(sheets, openxlsx::read.xlsx, xlsxFile=xlsxfile)[[1]]
-   
-   
+
+
    tsvfile <- file.path(wd, "protein_abundance__input data as-is.tsv")
-   
+
    df_all <- read.delim2(tsvfile)
-   
+   if(length(intersect(df_all$gene_symbols_or_id, toupper(geneNames))) == 0){
+      message("No target protein is found in the protein aboundance data!")
+      return()
+   }
+   mat <- NULL
+
    if(impute=="wrproteo"){
       dfImp <- matrixNAneighbourImpute(type.convert(as.matrix(df_all[, 4:ncol(df_all)]), as.is=T), annot$drug)
-      df <- dfImp$data  
+      df <- dfImp$data
       df <- df[df_all$gene_symbols_or_id %in% toupper(geneNames),]
       rownames(df) <- df_all$gene_symbols_or_id[df_all$gene_symbols_or_id %in% toupper(geneNames)]
       mat <- t(df)
@@ -250,13 +267,13 @@ plot_for_msdap_drugTreatment <- function(wd, geneNames, impute="halfmin", treatR
       MIN <- min(mat[!is.na(mat)])/2
       SD <- sqrt(sd(mat[!is.na(mat)]))
       mat[is.na(mat)] <- rnorm(n=NAs, mean=MIN, sd=SD)
-      print(paste("half of min(nonNA values", MIN, "square root of sd(nonNA values)", SD))
+      print(paste("half of min(nonNA values)", MIN, "square root of sd(nonNA values)", SD))
    }
-   
+
    rownames(mat) <- annot[, "shortname"]
-   
-   p <- ComplexHeatmap::Heatmap(mat, name="log(intensity)", cluster_rows=T, cluster_columns=T, 
-                           column_names_rot = 45, 
+
+   p <- ComplexHeatmap::Heatmap(mat, name="log(intensity)", cluster_rows=T, cluster_columns=T,
+                           column_names_rot = 45,
                            row_split = 3, column_split=3,
                            right_annotation = c(rowAnnotation(treat=annot[,"treatment"]),
                            rowAnnotation(drug=annot[,"drug"])),
@@ -266,11 +283,11 @@ plot_for_msdap_drugTreatment <- function(wd, geneNames, impute="halfmin", treatR
    pdf("heatmap_boxplot_of_selected_proteins.pdf", width=10, height=8)
    draw(p)
    #dev.off()
-   
+
    df_wide <- as.data.frame(cbind(SampleID=annot$shortname, Drug=annot$drug, Treatment=annot$treatment, mat))
    df_long <- pivot_longer(df_wide, cols=colnames(mat), names_to = "Protein", values_to = "Log2Intensity") %>%
       mutate(Log2Intensity=as.numeric(Log2Intensity))
-   
+
    #pdf("Viral_protein_boxplot.pdf", height=8, width=6)
    p1 <- ggboxplot(df_long, x="Treatment", y="Log2Intensity",
                    color = "black", palette = "jco", title="selected proteins", fill="Treatment",
@@ -278,7 +295,7 @@ plot_for_msdap_drugTreatment <- function(wd, geneNames, impute="halfmin", treatR
       geom_hline(yintercept = mean(df_long$Log2Intensity), linetype = 2, color="black") + # Add horizontal line at base mean
       stat_compare_means(label = "p.signif", ref.group=treatRef, method="t.test")   # Pairwise comparison against dose 0
    print(p1)
-   
+
    p2 <- ggboxplot(df_long, x="Drug", y="Log2Intensity", fill="Drug",
                    color = "black", palette = "jco", title="selected proteins",
                    xlab=FALSE, add="jitter", add.params = list(size=1, color="darkred"), facet.by=c("Treatment")) +
@@ -286,20 +303,20 @@ plot_for_msdap_drugTreatment <- function(wd, geneNames, impute="halfmin", treatR
       stat_compare_means(method = "anova", label.y = max(df_long$Log2Intensity)+1)+        # Add global annova p-value
       stat_compare_means(label = "p.signif", ref.group=drugRef, method="t.test") # Pairwise comparison against dose 0
    print(p2)
-   
+
    proteins <- unique(df_long$Protein)
-   
+
    for(protein in proteins){
       protein_df <- df_long %>%
          filter(Protein == protein)
-      
+
       p1 <- ggboxplot(protein_df, x="Treatment", y="Log2Intensity",
                       color = "black", palette = "jco", title=protein, fill="Treatment",
                       xlab=FALSE, add="jitter", add.params = list(size=1, color="darkred"), facet.by=c("Drug")) +
          geom_hline(yintercept = mean(df_long$Log2Intensity), linetype = 2, color="black") + # Add horizontal line at base mean
          stat_compare_means(label = "p.signif", ref.group=treatRef, method="t.test")   # Pairwise comparison against dose 0
       print(p1)
-      
+
       p2 <- ggboxplot(protein_df, x="Drug", y="Log2Intensity", fill="Drug",
                       color = "black", palette = "jco", title=protein,
                       xlab=FALSE, add="jitter", add.params = list(size=1, color="darkred"), facet.by=c("Treatment")) +
@@ -308,7 +325,7 @@ plot_for_msdap_drugTreatment <- function(wd, geneNames, impute="halfmin", treatR
          stat_compare_means(label = "p.signif", ref.group=drugRef, method="t.test") # Pairwise comparison against dose 0
       print(p2)
    }
-   
+
    dev.off()
 }
 
@@ -318,24 +335,29 @@ plot_for_msdap_group <- function(wd, geneNames, impute="halfmin", groupRef="Cont
       treatRef="mock"
       drugRef="nd"
    }
-   
+
    library(ComplexHeatmap)
    library(openxlsx)
    library(ggpubr)
    library(wrProteo)
-   
+
    setwd(wd)
    xlsxfile <- file.path(wd, "samples.xlsx")
    sheets <- openxlsx::getSheetNames(xlsxfile)
    annot <- lapply(sheets, openxlsx::read.xlsx, xlsxFile=xlsxfile)[[1]]
-   
-   
+
+
    tsvfile <- file.path(wd, "protein_abundance__input data as-is.tsv")
-   
+
    df_all <- read.delim2(tsvfile) %>%
       filter(!duplicated(gene_symbols_or_id)) # filter out protein groups with duplicated names
    rownames(df_all) <- df_all$gene_symbols_or_id
-   
+
+   if(length(intersect(df_all$gene_symbols_or_id, toupper(geneNames))) == 0){
+      message("No target protein is found in the protein aboundance data!")
+      return()
+   }
+
    if(impute=="wrproteo"){
       dfImp <- matrixNAneighbourImpute(type.convert(as.matrix(df_all[, 4:ncol(df_all)]), as.is=T), annot$group)
       mat_all <- dfImp$data
@@ -345,36 +367,36 @@ plot_for_msdap_group <- function(wd, geneNames, impute="halfmin", groupRef="Cont
       mat_all <- type.convert(as.matrix(df_all[, 4:ncol(df_all)]), as.is=T)
       rownames(mat_all) <- df_all$gene_symbols_or_id
       colnames(mat_all) <- annot[, "shortname"]
-      
+
       NAs <- length(mat_all[is.na(mat_all)])
       MIN <- min(mat_all[!is.na(mat_all)])/2
       SD <- sqrt(sd(mat_all[!is.na(mat_all)]))
       mat_all[is.na(mat_all)] <- rnorm(n=NAs, mean=MIN, sd=SD)
-      
+
       print(paste("half of min(nonNA values", MIN, "square root of sd(nonNA values)", SD))
    }
-   
+
    mat <- t(mat_all[toupper(unique(geneNames)),])
-   
+
    pdf("protein_boxplot.pdf", width=10, height=8)
-   p <- ComplexHeatmap::Heatmap(mat_all, name="log(intensity)", cluster_rows=T, cluster_columns=T, 
-                                column_names_rot = 45, 
+   p <- ComplexHeatmap::Heatmap(mat_all, name="log(intensity)", cluster_rows=T, cluster_columns=T,
+                                column_names_rot = 45,
                                 top_annotation = c(columnAnnotation(treat=annot[,"group"])),
                                 column_names_side = "bottom",
                                 show_row_names = F
    )
-   
+
    draw(p)
-   p <- ComplexHeatmap::Heatmap(mat, name="log(intensity)", cluster_rows=T, cluster_columns=T, 
-                                column_names_rot = 45, 
+   p <- ComplexHeatmap::Heatmap(mat, name="log(intensity)", cluster_rows=T, cluster_columns=T,
+                                column_names_rot = 45,
                                 right_annotation = c(rowAnnotation(treat=annot[,"group"])),
                                 cell_fun = function(j, i, x, y, width, height, fill) {
                                    grid.text(sprintf("%.1f", mat[i, j]), x, y, gp = gpar(fontsize = 8))}
    )
-   
+
    draw(p)
    #dev.off()
-   
+
    df_wide <- as.data.frame(cbind(SampleID=annot$shortname, Group=annot$group, mat))
    df_long <- pivot_longer(df_wide, cols=colnames(mat), names_to = "Protein", values_to = "Log2Intensity") %>%
       mutate(Log2Intensity=as.numeric(Log2Intensity))
@@ -386,7 +408,7 @@ plot_for_msdap_group <- function(wd, geneNames, impute="halfmin", groupRef="Cont
       geom_hline(yintercept = mean(df_long$Log2Intensity), linetype = 2, color="black") + # Add horizontal line at base mean
       stat_compare_means(label = "p.signif", ref.group=groupRef, method="t.test")   # Pairwise comparison against dose 0
    #print(p1)
-   
+
    ps1 <- ggplot(df_long, aes(x=Group, y=Log2Intensity, fill=Group)) + scale_fill_manual(values=rainbow(length(unique(annot$group)))) +
       geom_boxplot(notch=FALSE) +
       geom_jitter() +
@@ -397,15 +419,15 @@ plot_for_msdap_group <- function(wd, geneNames, impute="halfmin", groupRef="Cont
       labs(y=expression(paste(Log[2], "(Intensity)"))) +
       ggtitle("Selected proteins") +
       #stat_summary(fun=mean, geom="point", shape=23, size=4, fill="black") +
-      geom_signif(comparisons = comp, test="t.test", map_signif_level=TRUE,  step_increase = 0.1) 
+      geom_signif(comparisons = comp, test="t.test", map_signif_level=TRUE,  step_increase = 0.1)
    print(ps1)
-   
+
    proteins <- unique(df_long$Protein)
    print(proteins)
    for(protein in proteins){
       protein_df <- df_long %>%
          filter(Protein == protein)
-      
+
       p1 <- ggboxplot(protein_df, x="Group", y="Log2Intensity",
                       color = "black", palette = "jco", title=protein, fill="Group",
                       xlab=FALSE, add="jitter", add.params = list(size=1, color="darkred")) +
@@ -422,30 +444,30 @@ plot_for_msdap_group <- function(wd, geneNames, impute="halfmin", groupRef="Cont
          labs(y=expression(paste(Log[2], "(Intensity)"))) +
          ggtitle(protein) +
          #stat_summary(fun=mean, geom="point", shape=23, size=4, fill="black") +
-         geom_signif(comparisons = comp, test="t.test", map_signif_level=TRUE,  step_increase = 0.1) 
+         geom_signif(comparisons = comp, test="t.test", map_signif_level=TRUE,  step_increase = 0.1)
       print(ps1)
    }
-   
+
    dev.off()
 }
 
 
 make_contrasts <- function(wd, treatRef="mock", groupRef="nd"){
-   
+
       library(openxlsx)
-      
+
       setwd(wd)
       xlsxfile <- file.path(wd, "samples.xlsx")
       sheets <- openxlsx::getSheetNames(xlsxfile)
       annot <- lapply(sheets, openxlsx::read.xlsx, xlsxFile=xlsxfile)[[1]]
-      
+
       grouping <- annot$group
-      
+
       all_pairs <- combn(unique(grouping), 2, simplify = F)
       contrasts <- lapply(all_pairs, function(x){
          g1 <- unlist(strsplit(x[1], split="_"))
          g2 <- unlist(strsplit(x[2], split="_"))
-         
+
          if(g1[1]==g2[1] && g1[2]!=g2[2]){
             if(g1[2]==groupRef){
                return(x)
@@ -460,19 +482,23 @@ make_contrasts <- function(wd, treatRef="mock", groupRef="nd"){
                return(rev(x))
             }
          }
-         
+
       })
       return(contrasts[!sapply(contrasts, is.null)])
 }
 
 # plot peptide intensity for each gene in geneNames by group
 plot_peptide_data_group <- function(lwd, mydataset, geneNames){
-  
+
    sample_data <- mydataset$samples
    group_data <- mydataset$groups
    protein_data <- mydataset$proteins %>%
       filter(gene_symbols_or_id %in% geneNames)
-   
+   if(nrow(protein_data) == 0){
+      message("No target protein is found in the protein aboundance data!")
+      return()
+   }
+
    peptide_data <- mydataset$peptides %>%
       filter(isdecoy==FALSE) %>%
       filter(detect==TRUE) %>%
@@ -480,13 +506,13 @@ plot_peptide_data_group <- function(lwd, mydataset, geneNames){
       merge(group_data) %>%
       merge(protein_data) %>%
       select(peptide_id, protein_id, sample_id, confidence, intensity_all_group, group, gene_symbols_or_id)
-   
+
    pdf(file.path(lwd, "peptide_boxplot.pdf"), height=6, width=8)
    comp <- combn(group_data$key_group ,2, simplify=F)
    for(protein in unique(geneNames)){
       protein_df <- peptide_data %>%
          filter(gene_symbols_or_id == protein)
-      
+
       ps1 <- ggplot(protein_df, aes(x=group, y=intensity_all_group, color=group)) + scale_fill_manual(values=rainbow(nrow(group_data))) +
          geom_boxplot(notch=FALSE, outlier.shape = NA, size=2) +
          geom_jitter(size=2) +
@@ -497,286 +523,11 @@ plot_peptide_data_group <- function(lwd, mydataset, geneNames){
          labs(y=expression(paste(Log[2], "(Peptide intensity)"))) +
          ggtitle(protein) +
          #stat_summary(fun=mean, geom="point", shape=23, size=4, fill="black") +
-         geom_signif(comparisons = comp, test="t.test", map_signif_level=TRUE,  step_increase = 0.1) 
+         geom_signif(comparisons = comp, test="t.test", map_signif_level=TRUE,  step_increase = 0.1)
       print(ps1)
    }
-   
+
    dev.off()
-   
+
 }
 
-fastas <- c("C:/GREENBLATT/resource/human_uniprot_reference_proteome_9606.fasta/UP000005640_9606_061820.fasta",
-            "C:/GREENBLATT/resource/sars2_uniprot_reference_proteome_2697049.fasta/REFSEQ_Wuhan_Hu_1_nr.fasta")
-
-### 220516_INF2_INF5_DIA DIA-NN #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/220516_INF2_INF5_DIA"
-
-preprocess_diann_report(wd)
-mydataset <- prepare_msdap(wd)
-# for the contrasts, the first of the pair is the background
-contrasts <- list(c("sars2_nd", "sars2_b5"), c("mock_b5", "sars2_b5"), c("mock_nd", "sars2_nd"), c("mock_nd", "mock_b5")) 
-
-contrasts <- make_contrasts(wd, treatRef="mock", groupRef="nd")
-contrasts <- contrasts[]
-
-last_dir <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-last_dir <- "2022-05-18_10;39;20"
-
-wd <- file.path(wd,last_dir)
-
-geneNames <- gene_names_from_fasta(fastas[2])
-plot_for_msdap(wd, geneNames)
-col_order <- c("mock_nd.vs.mock_b1", "mock_nd.vs.mock_b5", "mock_nd.vs.mock_b10", "mock_nd.vs.mock_b50",
-               "mock_nd.vs.sars2_nd", "mock_b1.vs.sars2_b1", "mock_b5.vs.sars2_b5", "mock_b10.vs.sars2_b10", "mock_b50.vs.sars2_b50",
-               "sars2_nd.vs.sars2_b1", "sars2_nd.vs.sars2_b5", "sars2_nd.vs.sars2_b10", "sars2_nd.vs.sars2_b50")
-col_factor <- factor(c(rep("Mock",4), rep("MockSars2",5), rep("Sars2", 4)), levels=c("Mock", "MockSars2", "Sars2"))
-names(col_factor) <- col_order
-gsea_for_msdap(wd, padj_cutoff = 0.2, col_factor=col_factor)
-
-### 220324_basal DIA-NN #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/220324_nasal_EXP1/220324_basal/DIANN_05_04_2022"
-
-# the first of the pair is the background
-
-mydataset <- prepare_msdap(wd)
-contrasts <- make_contrasts(wd, treatRef="mock", groupRef="dmso")
-contrasts <- contrasts[6:7]
-
-last_dir <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-last_dir
-
-wd <- file.path(wd,last_dir)
-geneNames <- gene_names_from_fasta(fastas[2])
-plot_for_msdap(wd, geneNames)
-
-
-### 220324_apical DIA-NN #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/220324_nasal_EXP1/220324_apical/DIANN_04_04_2022"
-
-# the first of the pair is the background
-
-mydataset <- prepare_msdap(wd)
-contrasts <- make_contrasts(wd, treatRef="mock", groupRef="dmso")
-
-last_dir <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-last_dir
-
-wd <- file.path(wd,last_dir)
-geneNames <- gene_names_from_fasta(fastas[2])
-plot_for_msdap(wd, geneNames)
-
- ### 220222_INF5_DIA DIA-NN #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/220222_INF5_DIA/DIANN_02_03_22"
-# the first of the pair is the background
-contrasts <- list(c("sars2_nd", "sars2_b5"), c("mock_b5", "sars2_b5"), c("mock_nd", "sars2_nd"), c("mock_nd", "mock_b5")) 
-
-mydataset <- prepare_msdap(wd)
-
-run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-
-wd <- "C:/data/raw/EDYTA/PROTEIN/220222_INF5_DIA/DIANN_02_03_22/2022-03-03_16;24;58"
-gsea_for_msdap(wd, padj_cutoff = 0.2)
-geneNames <- gene_names_from_fasta(fastas[2])
-plot_for_msdap(wd, geneNames)
-
-### 220222_INF5_DIA mzDIA-NN #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/220222_INF5_DIA/mzDIANN_21_03_2022"
-# the first of the pair is the background
-contrasts <- list(c("sars2_nd", "sars2_b5"), c("mock_b5", "sars2_b5"), c("mock_nd", "sars2_nd"), c("mock_nd", "mock_b5")) 
-
-mydataset <- prepare_msdap(wd)
-
-out_dir <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-
-wd <- file.path("C:/data/raw/EDYTA/PROTEIN/220222_INF5_DIA/mzDIANN_21_03_2022", out_dir)
-
-geneNames <- gene_names_from_fasta(fastas[2])
-plot_for_msdap(wd, geneNames)
-gsea_for_msdap(wd)
-
-### 220222_INF5_DIA FraggerPipe DIA-NN #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/220222_INF5_DIA/FragPipe_17_03_2022"
-# the first of the pair is the background
-contrasts <- list(c("sars2_nd", "sars2_b5"), c("mock_b5", "sars2_b5"), c("mock_nd", "sars2_nd"), c("mock_nd", "mock_b5")) 
-
-mydataset <- prepare_msdap(wd, searchType = "msfragger")
-
-run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-
-wd <- "C:/data/raw/EDYTA/PROTEIN/220222_INF5_DIA/FragPipe_17_03_2022/2022-03-18_08;46;07"
-gsea_for_msdap(wd)
-geneNames <- gene_names_from_fasta(fastas[2])
-plot_for_msdap(wd, geneNames)
-
-### 220222_INF5_DIA FraggerPipe Umpire DIA-NN #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/220222_INF5_DIA/FragPipe_Umpire_18_03_2022"
-# the first of the pair is the background
-contrasts <- list(c("sars2_nd", "sars2_b5"), c("mock_b5", "sars2_b5"), c("mock_nd", "sars2_nd"), c("mock_nd", "mock_b5")) 
-
-mydataset <- prepare_msdap(wd, searchType = "DIA-NN")
-
-run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-
-wd <- "C:/data/raw/EDYTA/PROTEIN/220222_INF5_DIA/FragPipe_Umpire_18_03_2022/2022-03-18_18;18;30"
-gsea_for_msdap(wd)
-geneNames <- gene_names_from_fasta(fastas[2])
-plot_for_msdap(wd, geneNames)
-
-### 220222_INF5_DIA Maxquant DIA#####
-wd <- "C:/data/raw/EDYTA/PROTEIN/220222_INF5_DIA/combined/txt"
-# the first of the pair is the background
-contrasts <- list(c("sars2_nd", "sars2_b5"), c("mock_b5", "sars2_b5"), c("mock_nd", "sars2_nd"), c("mock_nd", "mock_b5")) 
-
-mydataset <- prepare_msdap(wd, searchType = "maxquant")
-
-run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-
-wd <- "C:/data/raw/EDYTA/PROTEIN/220222_INF5_DIA/combined/txt/2022-03-07_09;53;49"
-gsea_for_msdap(wd)
-plot_for_msdap(wd, geneNames)
-
-### 211221_INF5_2 Maxquant DDA #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/211221_INF5_2/combined/txt"
-# the first of the pair is the background
-contrasts <- list(c("sars2_nd", "sars2_b5"), c("mock_b5", "sars2_b5"), c("mock_nd", "sars2_nd"), c("mock_nd", "mock_b5")) 
-
-mydataset <- prepare_msdap(wd, searchType = "maxquant")
-
-run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-
-wd <- "C:/data/raw/EDYTA/PROTEIN/211221_INF5_2/combined/txt/2022-03-07_10;18;19"
-gsea_for_msdap(wd)
-plot_for_msdap(wd, geneNames)
-
-### 220301_INF2_DIA DIA-NN #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/220301_INF2_DIA/DIANN_10_03_2022"
-mydataset <- prepare_msdap(wd)
-mydataset$acquisition_mode
-
-contrasts <- list(c("inf_nd", "inf_b5"), 
-                  c("inf_nd", "inf_b10"),
-                  c("inf_nd", "inf_b50"),
-                  c("mock_nd", "mock_b5"), 
-                  c("mock_nd", "mock_b10"),
-                  c("mock_nd", "mock_b50"), 
-                  c("mock_nd", "inf_nd"), 
-                  c("mock_b5", "inf_b5"),
-                  c("mock_b10", "inf_b10"),
-                  c("mock_b50", "inf_b50"))
-run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-
-
-wd <- "C:/data/raw/EDYTA/PROTEIN/220301_INF2_DIA/DIANN_10_03_2022/2022-03-11_14;06;19"
-plot_for_msdap(wd, geneNames)
-gsea_for_msdap(wd)
-
-### 210727_Calu3_drugs_INF2_regular #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/210727_Calu3_drugs_INF2_regular/combined/txt"
-mydataset <- prepare_msdap(wd, searchType = "maxquant")
-mydataset$acquisition_mode
-
-contrasts <- list(c("inf_nd", "inf_b5"), 
-                  c("inf_nd", "inf_b10"),
-                  c("inf_nd", "inf_b50"),
-                  c("mock_nd", "mock_b5"), 
-                  c("mock_nd", "mock_b10"),
-                  c("mock_nd", "mock_b50"), 
-                  c("mock_nd", "inf_nd"), 
-                  c("mock_b5", "inf_b5"),
-                  c("mock_b10", "inf_b10"),
-                  c("mock_b50", "inf_b50"))
-run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-
-
-wd <- "C:/data/raw/EDYTA/PROTEIN/210727_Calu3_drugs_INF2_regular/combined/txt/2022-03-11_14;57;05"
-plot_for_msdap(wd, geneNames)
-gsea_for_msdap(wd)
-
-### 210929_SARS2_INF4 Maxquant DDA #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/210929_SARS2_INF4/combined/txt"
-# the first of the pair is the background
-contrasts <- list(c("sars2_nd", "sars2_mtx"), 
-                  c("sars2_nd", "sars2_ri1"), 
-                  c("sars2_nd", "sars2_tg"), 
-                  c("mock_nd", "mock_mtx"), 
-                  c("mock_nd", "mock_ri1"), 
-                  c("mock_nd", "mock_tg"), 
-                  c("mock_nd", "sars2_nd"),
-                  c("mock_mtx", "sars2_mtx"),
-                  c("mock_ri1", "sars2_ri1"),
-                  c("mock_tg", "sars2_tg")
-                  ) 
-
-mydataset <- prepare_msdap(wd, searchType = "maxquant")
-
-run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-
-wd <- "C:/data/raw/EDYTA/PROTEIN/210929_SARS2_INF4/combined/txt/2022-03-10_14;15;02"
-plot_for_msdap(wd, geneNames)
-
-### 220310_INF4_DIA DIA-NN #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/220310_INF4_DIA/DIANN_11_03_2022"
-# the first of the pair is the background
-contrasts <- make_contrasts(wd)
-mydataset <- prepare_msdap(wd)
-
-last_dir <- run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-last_dir
-
-wd <- "C:/data/raw/EDYTA/PROTEIN/220310_INF4_DIA/DIANN_11_03_2022/last_dir"
-plot_for_msdap(wd, geneNames)
-
-### 220307_INF1_DIA DIA-NN #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/220307_INF1_DIA/DIANN_10_03_2022"
-# the first of the pair is the background
-mydataset <- prepare_msdap(wd)
-contrasts <- make_contrasts(wd)
-
-run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-
-wd <- "C:/data/raw/EDYTA/PROTEIN/220307_INF1_DIA/DIANN_10_03_2022/2022-03-12_12;31;47"
-plot_for_msdap(wd, geneNames)
-
-### 210617_SARS2_DRUGS_EXP1 DDA Maxquant #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/210617_SARS2_DRUGS_EXP1/combined/txt"
-# the first of the pair is the background
-mydataset <- prepare_msdap(wd, searchType = "maxquant")
-
-contrasts <- make_contrasts(wd)
-
-run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-
-wd <- "C:/data/raw/EDYTA/PROTEIN/210617_SARS2_DRUGS_EXP1/combined/txt/2022-03-12_15;14;23"
-plot_for_msdap(wd, geneNames)
-
-### 210803_Calu3_drugs_Inf3 DDA Maxquant #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/210803_Calu3_drugs_Inf3/combined/txt"
-# the first of the pair is the background
-mydataset <- prepare_msdap(wd, searchType = "maxquant")
-
-contrasts <- make_contrasts(wd, treatRef="mock", groupRef="aavs12")
-
-run_msdap(wd, fastas, mydataset, contrasts=contrasts)
-
-wd <- "C:/data/raw/EDYTA/PROTEIN/210803_Calu3_drugs_Inf3/combined/txt/2022-03-14_15;08;29"
-plot_for_msdap(wd, geneNames, groupRef = "aavs12")
-
-### 201105_service_Meena Maxquant #####
-wd <- "C:/data/raw/EDYTA/PROTEIN/201105_service_Meena/combined/txt"
-fastas <- c("C:/GREENBLATT/resource/uniprot-proteome_BolivianSquirrelMonkey.fasta/uniprot-proteome_UP000233220.fasta")
-
-mydataset <- prepare_msdap(wd, searchType = "MAXQUANT")
-# for the contrasts, the first of the pair is the background
-contrasts <- list(c("Control", "THC"), c("Control", "THC_CBD"), c("THC", "THC_CBD")) 
-
-results <- run_msdap(wd, fastas, mydataset, contrasts=contrasts, plot_data = T)
-last_dir <- results$dir
-mydataset <- results$data
-
-lwd <- file.path(wd,last_dir)
-
-geneNames <- gene_names_from_fasta(fastas[1])
-geneNames <- geneNames[geneNames %in% c("GFAP", "STMN1", "NRCAM", "FBXO2")]
-plot_for_msdap_group(lwd, geneNames, groupRef="Control")
-plot_peptide_data_group(lwd, mydataset, geneNames)
-plot_volcano_for_msdap(lwd, padj_cutoff = 0.2, col_factor=NULL)
