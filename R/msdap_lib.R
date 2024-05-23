@@ -32,11 +32,15 @@ prepare_msdap <- function(wd, overwrite=FALSE, searchType="DIA-NN"){
       annot <- lapply(sheets, openxlsx::read.xlsx, xlsxFile=xlsxfile)[[1]]
       instruc <- lapply(sheets, openxlsx::read.xlsx, xlsxFile=xlsxfile)[[2]]
 
-      grouping <- sapply(annot$shortname, function(x){
-         g <- unlist(strsplit(x, split="_"))[1:2]
-         g <- paste(g, collapse = "_")})
-      names(grouping) <- NULL
-      annot$group <- grouping
+      annot <- annot %>%
+         dplyr::mutate(Treatment	= shortname,
+                       Time = shortname,
+                       Phenotype = shortname,
+                       Cell = shortname,
+                       group = shortname) %>%
+         dplyr::select(sample_id, shortname, Treatment, Time, Phenotype, Cell,
+                       group, exclude)
+
 
       print(annot)
 
@@ -77,10 +81,10 @@ run_msdap <- function(wd, fastas, mydataset, contrasts=NULL, plot_data=FALSE){
    print_dataset_summary(mydataset)
 
    mydataset <- analysis_quickstart(mydataset,
-                       filter_min_detect=1,
+                       filter_min_quant=1, #zero to fully rely on MBR
                        filter_by_contrast=T,
                        dea_log2foldchange_threshold=NA,
-                       dea_algorithm = c("msqrob"),
+                       dea_algorithm = c("deqms"),
                        dea_qvalue_threshold = 0.05,
                        pca_sample_labels="shortname",
                        norm_algorithm = c("vwmb", "modebetween_protein"),
@@ -104,7 +108,8 @@ run_msdap <- function(wd, fastas, mydataset, contrasts=NULL, plot_data=FALSE){
    return(list("dir"=last_dir, "data"=mydataset))
 }
 
-plot_volcano_for_msdap <- function(wd, padj_cutoff=0.05, col_factor=NULL, gsea=FALSE){
+plot_volcano_for_msdap <- function(wd, padj_cutoff=0.05, lfc_cutoffs=NULL,
+                                   col_factor=NULL, gsea=FALSE){
    #wd <- "C:/data/raw/EDYTA/PROTEIN/211221_INF5_2/combined/txt/2022-03-07_10;18;19"
    library(openxlsx)
    library(EnhancedVolcano)
@@ -131,13 +136,13 @@ plot_volcano_for_msdap <- function(wd, padj_cutoff=0.05, col_factor=NULL, gsea=F
 
 
    lfc_df <- my_df %>%
-      select(c("gene_symbols_or_id", starts_with("foldchange.log2_msqrob_contrast"), starts_with("qvalue_msqrob_contrast"))) %>%
+      select(c("gene_symbols_or_id", starts_with("foldchange.log2_deqms_contrast"), starts_with("qvalue_deqms_contrast"))) %>%
       filter(!grepl(";", gene_symbols_or_id)) %>% # filter out protein groups with more than two proteins
       filter(!duplicated(gene_symbols_or_id)) # filter out protein groups with duplicated names
    lfc_mat <- lfc_df %>%
-      select(starts_with("foldchange.log2_msqrob_contrast"))
+      select(starts_with("foldchange.log2_deqms_contrast"))
    rownames(lfc_mat) <- lfc_df$gene_symbols_or_id
-   colnames(lfc_mat) <- gsub("foldchange.log2_msqrob_contrast:.", "", colnames(lfc_mat))
+   colnames(lfc_mat) <- gsub("foldchange.log2_deqms_contrast:.", "", colnames(lfc_mat))
 
    ## choose gene with less than 25% missing values in all contrasts
    lfc_mat <- lfc_mat[apply(lfc_mat,1, function(x)sum(is.na(x))<0.25*ncol(lfc_mat)),]
@@ -164,24 +169,29 @@ plot_volcano_for_msdap <- function(wd, padj_cutoff=0.05, col_factor=NULL, gsea=F
                                 name="fold change")
    ComplexHeatmap::draw(h)
 
-   lapply(colnames(lfc_df)[grepl("foldchange.log2_msqrob_contrast", colnames(lfc_df))], function(x){
+   lapply(colnames(lfc_df)[grepl("foldchange.log2_deqms_contrast", colnames(lfc_df))], function(x){
       print(x)
-      cn <- gsub("foldchange.log2_msqrob_contrast:.", "", x)
+      cn <- gsub("foldchange.log2_deqms_contrast:.", "", x)
       print(cn)
 
       ## for volcano plot
-      y <- paste0("qvalue_msqrob_contrast:.", cn)
-      lfc_cutoff <- 1
-      p_cutoff <- 0.05
+      y <- paste0("qvalue_deqms_contrast:.", cn)
+      if(is.null(lfc_cutoffs)){
+         lfc_cutoff <- 1
+      }else{
+         lfc_cutoff <- lfc_cutoffs[cn]
+      }
+
       p <- EnhancedVolcano(lfc_df,
                            lab = lfc_df[,"gene_symbols_or_id"],
                            x = x,
                            y = y,
                            title = cn,
                            subtitle = paste("N =", nrow(lfc_df)),
-                           caption = paste("log2 fold change cutoff = +/-", lfc_cutoff,  " adjusted pvalue cutoff = ", p_cutoff, sep=""),
-                           pCutoff = p_cutoff,
+                           caption = paste("log2 fold change cutoff = +/-", lfc_cutoff,  " adjusted pvalue cutoff = ", padj_cutoff, sep=""),
+                           pCutoff = padj_cutoff,
                            FCcutoff = lfc_cutoff,
+                           ylim = c(0, max(-log10(lfc_df[[y]]), na.rm = TRUE) + 1),
                            labSize = 4,
                            pointSize = 3.0,
                            #drawConnectors = TRUE,
@@ -225,13 +235,12 @@ gene_names_from_fasta <- function(fasta){
 #' 'protein_abundance__input data as-is.tsv' are located
 #' @param geneNames a vector of characters denoting the selected gene names whose data will be analyzed
 #' @param impute a string in ("halfmin", "wrproteo") denoting the imputation methods for missing values, default 'halfmin'
-#' @param treatRef reference group for the treat factor
-#' @param drugRef reference group for the drug factor
+#' @param comparisons reference group for each factor
 #'
 #' @return NULL
 #' @author Shuye Pu
 
-plot_for_msdap_drugTreatment <- function(wd, geneNames, impute="halfmin", treatRef="mock", drugRef="nd"){
+plot_for_msdap_drugTreatment <- function(wd, geneNames, impute="halfmin", comparisons="Treatment|UI,Time|0,Group|MOCK", data_name="msdap"){
 
    library(ComplexHeatmap)
    library(openxlsx)
@@ -242,6 +251,19 @@ plot_for_msdap_drugTreatment <- function(wd, geneNames, impute="halfmin", treatR
    xlsxfile <- file.path(wd, "samples.xlsx")
    sheets <- openxlsx::getSheetNames(xlsxfile)
    annot <- lapply(sheets, openxlsx::read.xlsx, xlsxFile=xlsxfile)[[1]]
+
+   NAME <- colnames(annot)[2]
+   EXPERIMENT <- colnames(annot)[3]
+   TREATMENT <- colnames(annot)[4]
+   DOSE <- colnames(annot)[5]
+   PHENOTYPE <- colnames(annot)[6]
+   CELL <- colnames(annot)[7]
+   GROUP <- colnames(annot)[9]
+
+   categs <- unlist(strsplit(comparisons, split=","))
+   categ <- unlist(lapply(categs, function(x) unlist(strsplit(x, split="|", fixed=T))[1]))
+   categRef <- unlist(lapply(categs, function(x) unlist(strsplit(x, split="|", fixed=T))[2]))
+   names(categRef) <- tolower(categ)
 
 
    tsvfile <- file.path(wd, "protein_abundance__input data as-is.tsv")
@@ -254,14 +276,14 @@ plot_for_msdap_drugTreatment <- function(wd, geneNames, impute="halfmin", treatR
    mat <- NULL
 
    if(impute=="wrproteo"){
-      dfImp <- matrixNAneighbourImpute(type.convert(as.matrix(df_all[, 4:ncol(df_all)]), as.is=T), annot$drug)
+      dfImp <- matrixNAneighbourImpute(type.convert(as.matrix(df_all[, 4:ncol(df_all)]), as.is=T), annot[, CELL])
       df <- dfImp$data
-      df <- df[df_all$gene_symbols_or_id %in% toupper(geneNames),]
-      rownames(df) <- df_all$gene_symbols_or_id[df_all$gene_symbols_or_id %in% toupper(geneNames)]
+      df <- df[df_all$fasta_headers %in% names(geneNames),]
+      rownames(df) <- df_all$gene_symbols_or_id[df_all$fasta_headers %in% names(geneNames)]
       mat <- t(df)
    }else{
-      df <- df_all[df_all$gene_symbols_or_id %in% toupper(geneNames),]
-      rownames(df) <- df_all$gene_symbols_or_id[df_all$gene_symbols_or_id %in% toupper(geneNames)]
+      df <- df_all[df_all$fasta_headers %in% names(geneNames),]
+      rownames(df) <- df_all$gene_symbols_or_id[df_all$fasta_headers %in% names(geneNames)]
       mat <- t(type.convert(as.matrix(df[, 4:ncol(df)]), as.is=T))
       NAs <- length(mat[is.na(mat)])
       MIN <- min(mat[!is.na(mat)])/2
@@ -270,63 +292,92 @@ plot_for_msdap_drugTreatment <- function(wd, geneNames, impute="halfmin", treatR
       print(paste("half of min(nonNA values)", MIN, "square root of sd(nonNA values)", SD))
    }
 
-   rownames(mat) <- annot[, "shortname"]
+   rownames(mat) <- annot[, EXPERIMENT]
 
    p <- ComplexHeatmap::Heatmap(mat, name="log(intensity)", cluster_rows=T, cluster_columns=T,
                            column_names_rot = 45,
                            row_split = 3, column_split=3,
-                           right_annotation = c(rowAnnotation(treat=annot[,"treatment"]),
-                           rowAnnotation(drug=annot[,"drug"])),
+                           right_annotation = c(rowAnnotation(treat=annot[,TREATMENT]),
+                                                rowAnnotation(time=as.factor(annot[,DOSE])),
+                                                rowAnnotation(phenotype=annot[,PHENOTYPE])),
                            cell_fun = function(j, i, x, y, width, height, fill) {
                                  grid.text(sprintf("%.1f", mat[i, j]), x, y, gp = gpar(fontsize = 8))}
                            )
-   pdf("heatmap_boxplot_of_selected_proteins.pdf", width=10, height=8)
+   pdf("heatmap_of_selected_proteins.pdf", width=10, height=8)
    draw(p)
-   #dev.off()
+   dev.off()
 
-   df_wide <- as.data.frame(cbind(SampleID=annot$shortname, Drug=annot$drug, Treatment=annot$treatment, mat))
-   df_long <- pivot_longer(df_wide, cols=colnames(mat), names_to = "Protein", values_to = "Log2Intensity") %>%
+   df_wide <- as.data.frame(cbind(annot[, c(EXPERIMENT, TREATMENT, DOSE, PHENOTYPE, CELL)], mat))
+   df_wide[,DOSE] <- as.factor(df_wide[,DOSE])
+   stats_df <- pivot_longer(df_wide, cols=colnames(mat), names_to = "Protein", values_to = "Log2Intensity") %>%
       mutate(Log2Intensity=as.numeric(Log2Intensity))
 
-   #pdf("Viral_protein_boxplot.pdf", height=8, width=6)
-   p1 <- ggboxplot(df_long, x="Treatment", y="Log2Intensity",
-                   color = "black", palette = "jco", title="selected proteins", fill="Treatment",
-                   xlab=FALSE, add="jitter", add.params = list(size=1, color="darkred"), facet.by=c("Drug")) +
-      geom_hline(yintercept = mean(df_long$Log2Intensity), linetype = 2, color="black") + # Add horizontal line at base mean
-      stat_compare_means(label = "p.signif", ref.group=treatRef, method="t.test")   # Pairwise comparison against dose 0
-   print(p1)
+   for(cell in unique(annot[, CELL])){
+      cell_df <- stats_df[stats_df[,CELL] == cell,]
+      if(nrow(cell_df) <= 0) next
 
-   p2 <- ggboxplot(df_long, x="Drug", y="Log2Intensity", fill="Drug",
-                   color = "black", palette = "jco", title="selected proteins",
-                   xlab=FALSE, add="jitter", add.params = list(size=1, color="darkred"), facet.by=c("Treatment")) +
-      geom_hline(yintercept = mean(df_long$Log2Intensity), linetype = 2, color="black") + # Add horizontal line at base mean
-      stat_compare_means(method = "anova", label.y = max(df_long$Log2Intensity)+1)+        # Add global annova p-value
-      stat_compare_means(label = "p.signif", ref.group=drugRef, method="t.test") # Pairwise comparison against dose 0
-   print(p2)
+      print(unique(cell_df[,CELL]))
+      print(cell)
+      print(head(cell_df))
 
-   proteins <- unique(df_long$Protein)
+      pdf(paste(data_name, cell, "allGene_boxplot.pdf", sep="_"), height=10, width=8)
+      #ggexport(p, filename=figname)
 
-   for(protein in proteins){
-      protein_df <- df_long %>%
-         filter(Protein == protein)
+      p1a <- ggboxplot(cell_df, x=DOSE, y="Log2Intensity",
+                       color = "black", palette = "jco", title=data_name, fill=DOSE,
+                       xlab=FALSE, add="jitter", facet.by=c(TREATMENT, PHENOTYPE)) +
+         geom_hline(yintercept = mean(cell_df$Log2Intensity), linetype = 2,
+                    color="red3") + # Add horizontal line at base mean
+         stat_compare_means(label = "p.signif", ref.group=categRef[DOSE],
+                            method="t.test")   # Pairwise comparison against dose 0
+      print(p1a)
 
-      p1 <- ggboxplot(protein_df, x="Treatment", y="Log2Intensity",
-                      color = "black", palette = "jco", title=protein, fill="Treatment",
-                      xlab=FALSE, add="jitter", add.params = list(size=1, color="darkred"), facet.by=c("Drug")) +
-         geom_hline(yintercept = mean(df_long$Log2Intensity), linetype = 2, color="black") + # Add horizontal line at base mean
-         stat_compare_means(label = "p.signif", ref.group=treatRef, method="t.test")   # Pairwise comparison against dose 0
-      print(p1)
 
-      p2 <- ggboxplot(protein_df, x="Drug", y="Log2Intensity", fill="Drug",
-                      color = "black", palette = "jco", title=protein,
-                      xlab=FALSE, add="jitter", add.params = list(size=1, color="darkred"), facet.by=c("Treatment")) +
-         geom_hline(yintercept = mean(df_long$Log2Intensity), linetype = 2, color="black") + # Add horizontal line at base mean
-         stat_compare_means(method = "anova", label.y = max(df_long$Log2Intensity)+1)+        # Add global annova p-value
-         stat_compare_means(label = "p.signif", ref.group=drugRef, method="t.test") # Pairwise comparison against dose 0
-      print(p2)
+      p1b <- ggboxplot(cell_df, x=TREATMENT, y="Log2Intensity", fill=TREATMENT,
+                       color = TREATMENT, palette = "jco", title=data_name,
+                       xlab=FALSE, add="jitter", facet.by=c(PHENOTYPE, DOSE)) +
+         geom_hline(yintercept = mean(cell_df$Log2Intensity), linetype = 2, color="red3") + # Add horizontal line at base mean
+         stat_compare_means(method = "anova", label.y = max(cell_df$Log2Intensity)+1)+        # Add global annova p-value
+         stat_compare_means(label = "p.signif", ref.group=categRef[TREATMENT], method="t.test") # Pairwise comparison against NT
+      print(p1b)
+
+      p1c <- ggboxplot(cell_df, x=PHENOTYPE, y="Log2Intensity", fill=PHENOTYPE,
+                       color = PHENOTYPE, palette = "jco", title=data_name,
+                       xlab=FALSE, add="jitter", facet.by=c(TREATMENT, DOSE)) +
+         geom_hline(yintercept = mean(cell_df$Log2Intensity), linetype = 2, color="red3") + # Add horizontal line at base mean
+         stat_compare_means(method = "anova", label.y = max(cell_df$Log2Intensity)+1)+        # Add global annova p-value
+         stat_compare_means(label = "p.signif", ref.group=categRef[PHENOTYPE], method="t.test") # Pairwise comparison against MOCK
+      print(p1c)
+
+      dev.off()
+
+
+      if(length(unique(cell_df$Gene)) < 50){
+         pdf(paste(data_name, cell, "perGene_boxplot.pdf", sep="_"), height=10, width=8)
+
+         for(mod in unique(cell_df$Protein)){
+            #mod <- "GPR89B|203"
+            sub_df <- cell_df[cell_df$Protein == mod,]
+            p5a <- ggboxplot(sub_df, x=DOSE, y="Log2Intensity",
+                             color = DOSE, palette = "ucscgb", title=data_name, subtitle=mod,
+                             xlab=FALSE, add="jitter", facet.by=c(TREATMENT, PHENOTYPE)) +
+               stat_compare_means(label = "p.signif", ref.group=categRef[DOSE], method="t.test")
+            print(p5a)
+
+            p5b <- ggboxplot(sub_df, x=TREATMENT, y="Log2Intensity",
+                             color = TREATMENT, palette = "ucscgb", title=data_name, subtitle=mod,
+                             xlab=FALSE, add="jitter", facet.by=c(PHENOTYPE, DOSE)) +
+               stat_compare_means(label = "p.signif", ref.group=categRef[TREATMENT], method="t.test")
+            print(p5b)
+            p5c <- ggboxplot(sub_df, x=PHENOTYPE, y="Log2Intensity",
+                             color = PHENOTYPE, palette = "ucscgb", title=data_name, subtitle=mod,
+                             xlab=FALSE, add="jitter", facet.by=c(TREATMENT, DOSE)) +
+               stat_compare_means(label = "p.signif", ref.group=categRef[PHENOTYPE], method="t.test")
+            print(p5c)
+         }
+         dev.off()
+      }
    }
-
-   dev.off()
 }
 
 plot_for_msdap_group <- function(wd, geneNames, impute="halfmin", groupRef="Control"){
@@ -451,8 +502,75 @@ plot_for_msdap_group <- function(wd, geneNames, impute="halfmin", groupRef="Cont
    dev.off()
 }
 
+# comparisons <- "Treatment|UI,Time|0,Phenotype|MOCK" if allpairs = FALSE
+# comparisons <- "group|UI+0+MOCK" is allpairs = TRUE
+make_contrasts <- function(wd, comparisons, allpairs = FALSE){
+   stopifnot(any(!is.null(comparisons), allpairs))
+   library(readxl)
 
-make_contrasts <- function(wd, treatRef="mock", groupRef="nd"){
+   setwd(wd)
+   xlfile <- file.path(wd, "samples.xlsx")
+   groupDesign <- as.data.frame(readxl::read_excel(xlfile, 1)) %>%
+      dplyr::filter(!exclude)
+
+
+   NAME <- colnames(groupDesign)[1]
+   EXPERIMENT <- colnames(groupDesign)[2]
+   TREATMENT <- colnames(groupDesign)[3]
+   DOSE <- colnames(groupDesign)[4]
+   PHENOTYPE <- colnames(groupDesign)[5]
+   cells <- unique(groupDesign[,6])
+
+   conditions <- groupDesign %>%
+      dplyr::pull(group)
+   names(conditions) <- groupDesign[, EXPERIMENT]
+
+   categs <- unlist(strsplit(comparisons, split=","))
+
+   categ <- unlist(lapply(categs, function(x)
+      unlist(strsplit(x, split="|", fixed=T))[1]))
+   categRef <- unlist(lapply(categs, function(x)
+      unlist(strsplit(x, split="|", fixed=T))[2]))
+   names(categRef) <- categ
+
+   all_pairs <- combn(unique(conditions), 2, simplify = F)
+
+   if(allpairs) {
+      if(is.na(categRef["group"])) stop("Must be like 'comps = group|pbs_wt'")
+      for(i in seq_along(all_pairs)){
+         apair <- all_pairs[[i]]
+         if(apair[2] == categRef["group"])
+            all_pairs[[i]] <- rev(apair)
+      }
+      return(all_pairs)
+   }
+
+   contrasts <- lapply(all_pairs, function(factors){
+      treatments <- unlist(lapply(factors, function(x)unlist(strsplit(x, split="+",fixed=T))[1]))
+      doses <- unlist(lapply(factors, function(x)unlist(strsplit(x, split="+",fixed=T))[2]))
+      phenotypes <- unlist(lapply(factors, function(x)unlist(strsplit(x, split="+",fixed=T))[3]))
+
+      contrastN <- NULL
+      ## reorder group contrast such that background group is fixed as the first element of the pair
+      if(treatments[1] == treatments[2] && doses[1] == doses[2] && categRef[PHENOTYPE] %in% phenotypes){
+         contrastN <- ifelse(phenotypes[1] == categRef[PHENOTYPE], list(factors), list(rev(factors)))
+      }
+
+      if(phenotypes[1] == phenotypes[2] && doses[1] == doses[2] && categRef[TREATMENT] %in% treatments){
+         contrastN <- ifelse(treatments[1] == categRef[TREATMENT], list(factors), list(rev(factors)))
+      }
+
+      if(phenotypes[1] == phenotypes[2] && treatments[1] == treatments[2] && categRef[DOSE] %in% doses){
+         contrastN <- ifelse(doses[1] == categRef[DOSE], list(factors), list(rev(factors)))
+      }
+      names(contrastN) <- NULL
+      return(unlist(contrastN))
+   })
+   return(contrasts[!sapply(contrasts, is.null)])
+
+}
+
+make_contrasts_old <- function(wd, treatRef="mock", groupRef="nd"){
 
       library(openxlsx)
 
