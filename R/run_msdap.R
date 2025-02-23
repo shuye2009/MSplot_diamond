@@ -6,7 +6,46 @@ fastas <- c(human = "C:/GREENBLATT/resource/human_uniprot_reference_proteome_960
             sars2 = "C:/GREENBLATT/resource/sars2_uniprot_reference_proteome_2697049.fasta/REFSEQ_Wuhan_Hu_1_nr.fasta",
             ebv = "C:/GREENBLATT/resource/EB_virus_fasta/uniprot-proteome_UP000153037_strain_B95-8.fasta",
             HA = "C:/data/raw/EDYTA/PROTEIN/240117_RobertBonin_DIA/HA-C1.fasta",
-            clostridium = "C:/GREENBLATT/resource/Clostridium_perfringens_fasta/UP000000818_195102_reference.fasta")
+            clostridium = "C:/GREENBLATT/resource/Clostridium_perfringens_fasta/UP000000818_195102_reference.fasta",
+            cottonTree= "C:/GREENBLATT/resource/Ptrichocarpa_fasta/Ptrichocarpa_444_v3.1.protein.fa")
+
+### 240701_AL_DIA ####
+wd <- "C:/data/raw/EDYTA/PROTEIN/241031_Gio/DIANN"
+
+mydataset <- prepare_msdap(wd)
+
+#comps = "group|C"
+comps = "group|WT_HEK293"
+contrasts <- make_contrasts(wd, comparisons = comps, allpairs = TRUE)
+
+res <- run_msdap(wd, fastas[1], mydataset, contrasts=contrasts)
+res$dir
+head(res$data)
+
+wd <- file.path(wd,res$dir)
+
+plot_volcano_for_msdap(wd, padj_cutoff = 0.05,
+                       lfc_cutoffs = c("WT_HEK293.vs.ZNF121_KO" = 1.47),
+                       col_factor=NULL, FALSE)
+
+### 240701_AL_DIA ####
+wd <- "C:/data/raw/EDYTA/PROTEIN/240920_Katherine_control/DIANN"
+
+mydataset <- prepare_msdap(wd)
+
+#comps = "group|C"
+comps = "group|920_katherine_control"
+contrasts <- make_contrasts(wd, comparisons = comps, allpairs = TRUE)
+
+res <- run_msdap(wd, fastas[6], mydataset, contrasts=contrasts)
+res$dir
+head(res$data)
+
+wd <- file.path(wd,res$dir)
+
+plot_volcano_for_msdap(wd, padj_cutoff = 0.05,
+                       lfc_cutoffs = c("920_katherine_control vs 823_katherine" = 1.209),
+                       col_factor=NULL, FALSE)
 
 ### 240410_EM_DIA ####
 wd <- "C:/data/raw/EDYTA/PROTEIN/240410_EM_DIA/DIANN"

@@ -9,6 +9,13 @@ preprocess_diann_report <- function(wd){
    write.table(df, file.path(wd, "report.tsv"), sep="\t", row.names=F, quote=F)
 }
 
+# Produce samples.xlsx file with these columns:
+#
+# sample_id, shortname, Treatment, Time, Phenotype, Cell, group, exclude
+#
+# edit this file manually according to your experimental design before proceeding
+# with msdap analysis
+#
 prepare_msdap <- function(wd, overwrite=FALSE, searchType="DIA-NN"){
    library(iq)
    library(msdap)
@@ -57,6 +64,7 @@ prepare_msdap <- function(wd, overwrite=FALSE, searchType="DIA-NN"){
    return(mydataset)
 }
 
+# Run functions in msdap R package
 run_msdap <- function(wd, fastas, mydataset, contrasts=NULL, plot_data=FALSE){
 
    mydataset <- import_fasta(mydataset, files=fastas)
@@ -108,6 +116,7 @@ run_msdap <- function(wd, fastas, mydataset, contrasts=NULL, plot_data=FALSE){
    return(list("dir"=last_dir, "data"=mydataset))
 }
 
+# Plot enhanced volcano and perform GSEA analysis
 plot_volcano_for_msdap <- function(wd, padj_cutoff=0.05, lfc_cutoffs=NULL,
                                    col_factor=NULL, gsea=FALSE){
    #wd <- "C:/data/raw/EDYTA/PROTEIN/211221_INF5_2/combined/txt/2022-03-07_10;18;19"
@@ -191,7 +200,7 @@ plot_volcano_for_msdap <- function(wd, padj_cutoff=0.05, lfc_cutoffs=NULL,
                            caption = paste("log2 fold change cutoff = +/-", lfc_cutoff,  " adjusted pvalue cutoff = ", padj_cutoff, sep=""),
                            pCutoff = padj_cutoff,
                            FCcutoff = lfc_cutoff,
-                           ylim = c(0, max(-log10(lfc_df[[y]]), na.rm = TRUE) + 1),
+                           ylim = c(0, max(-log10(lfc_df[[y]]), na.rm = TRUE) + 1.5),
                            labSize = 4,
                            pointSize = 3.0,
                            #drawConnectors = TRUE,
@@ -380,6 +389,20 @@ plot_for_msdap_drugTreatment <- function(wd, geneNames, impute="halfmin", compar
    }
 }
 
+#' @title plot one factor boxplot
+#' @description This function extracts protein abundance values from output of 'run_msdap' for selected genes, plot
+#' boxplots for the group vaiable, with statistical significance annotations. The statistical analysis
+#' is one-way anova followed by t-test on log transformed intensity values.
+#'
+#' @param wd working directory where sample information file 'sample.xlsx', and abundance data
+#' 'protein_abundance__input data as-is.tsv' are located
+#' @param geneNames a vector of characters denoting the selected gene names whose data will be analyzed
+#' @param impute a string in ("halfmin", "wrproteo") denoting the imputation methods for missing values, default 'halfmin'
+#' @param groupRef reference group for the group factor
+#'
+#' @return NULL
+#' @author Shuye Pu
+
 plot_for_msdap_group <- function(wd, geneNames, impute="halfmin", groupRef="Control"){
    if(0){
       impute="halfmin"
@@ -502,6 +525,7 @@ plot_for_msdap_group <- function(wd, geneNames, impute="halfmin", groupRef="Cont
    dev.off()
 }
 
+# Specify the comparisons for msdap, the format of the column|reference, e.g.
 # comparisons <- "Treatment|UI,Time|0,Phenotype|MOCK" if allpairs = FALSE
 # comparisons <- "group|UI+0+MOCK" is allpairs = TRUE
 make_contrasts <- function(wd, comparisons, allpairs = FALSE){
